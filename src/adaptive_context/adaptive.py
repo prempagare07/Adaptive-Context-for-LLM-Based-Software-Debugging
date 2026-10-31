@@ -82,7 +82,8 @@ class AdaptiveDebugger:
             obj = parse_reply(reply.text)
             if obj is None:
                 stats.failures += 1
-                note = "Your last reply was not valid JSON. Reply with exactly one JSON object."
+                note = ("Your last reply did not match the action schema. Reply with exactly one JSON object "
+                        "using the required fields and types from the system instructions.")
                 trace.append({**entry, "invalid": True})
                 continue
             if obj["action"] == "diagnose" or allowed == "diagnose":

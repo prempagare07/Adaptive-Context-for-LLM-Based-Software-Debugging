@@ -31,19 +31,45 @@ def build_user_prompt(bug_report: str, context: str, allowed: str, round_no: int
             f"{note}\nCONTEXT:\n{context}\n")
 
 
+def _valid_diagnosis(obj) -> bool:
+    """Validate the response shape, independently of diagnosis correctness."""
+    if not isinstance(obj, dict) or obj.get("action") != "diagnose":
+        return False
+    if not all(isinstance(obj.get(key), str) and obj[key].strip()
+               for key in ("file", "function", "cause")):
+        return False
+    return (bool(obj["function"].rsplit(".", 1)[-1].strip())
+            and isinstance(obj.get("fix"), str)
+            and obj.get("confidence") in ("high", "low"))
+
+
+def _valid_request(obj) -> bool:
+    if not isinstance(obj, dict) or obj.get("action") != "request":
+        return False
+    symbols, queries = obj.get("symbols", []), obj.get("queries", [])
+    return (isinstance(symbols, list) and isinstance(queries, list)
+            and bool(symbols or queries)
+            and all(isinstance(value, str) and value.strip() for value in symbols + queries))
+
+
 def parse_reply(text: str):
+    """Find a supported action with correctly typed, complete fields."""
+    if not isinstance(text, str):
+        return None
     dec = json.JSONDecoder()
     for m in re.finditer(r"\{", text):
         try:
             obj, _ = dec.raw_decode(text[m.start():])
         except ValueError:
             continue
-        if isinstance(obj, dict) and obj.get("action") in ("diagnose", "request"):
+        if _valid_diagnosis(obj) or _valid_request(obj):
             return obj
     return None
 
 
 def to_diagnosis(obj: dict) -> Diagnosis:
-    return Diagnosis(file=str(obj.get("file", "")), function=str(obj.get("function", "")).split(".")[-1],
-                     cause=str(obj.get("cause", "")), fix=str(obj.get("fix", "")),
-                     confidence=str(obj.get("confidence", "")), valid=True)
+    if not _valid_diagnosis(obj):
+        return Diagnosis()
+    return Diagnosis(file=obj["file"].strip(), function=obj["function"].rsplit(".", 1)[-1].strip(),
+                     cause=obj["cause"].strip(), fix=obj["fix"],
+                     confidence=obj["confidence"], valid=True)

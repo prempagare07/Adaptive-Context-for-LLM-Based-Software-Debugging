@@ -21,7 +21,7 @@ Zero required dependencies (pure standard library). Python 3.10+.
 
 ```bash
 pip install -e ".[dev]"            # no runtime deps
-pytest                             # 14 tests, <1 s
+pytest -q                          # includes malformed-action and recovery regressions
 
 # scale test, offline (simulated LLM). 2000 cases ~ 1 min on 1 CPU; use --workers N for more
 python -m adaptive_context.bench.run --n 2000 --workers 4 --miss 0.1
@@ -40,7 +40,7 @@ python -m adaptive_context.bench.run --llm groq --n 30 --workers 1
 Benchmark systems: `static_k3` (baseline), `static_wide` (static, Top-10: does "just retrieve more" win?),
 `adaptive` (LLM-driven requests), `adaptive_graph` (requests + callee prefetch).
 Metrics: file/function accuracy with Wilson 95% CI, grounded accuracy (right answer AND evidence in context),
-fix check (patched line is run against the failing test), tokens, LLM calls, retrievals, latency, failures, accuracy by bug depth,
+restricted generated-fix check, tokens, LLM calls, retrievals, latency, failures, accuracy by bug depth,
 paired counts.
 
 ## Results seen while building (simulated LLM, miss rate 10%)
@@ -74,6 +74,7 @@ src/adaptive_context/
   baseline.py adaptive.py llm.py sim.py cli.py models.py tokens.py
   bench/generate.py bench/run.py
 tests/test_core.py        examples/payment_bug/
+```
 
 ## Not done yet (honest status)
 
@@ -81,18 +82,29 @@ tests/test_core.py        examples/payment_bug/
 * No `fix_check` for real repos (only the synthetic benchmark verifies fixes).
 * No real-repo datasets (BugsInPy etc.) and no real-LLM results yet.
 * `run_failing_test` uses a temp copy and timeout, which is not a security sandbox. Only run tests from repos you trust.
-```
 
 ## Mapping to the Milestone 2 design
 
 | Design item | Code |
 |---|---|
 | Code index (AST chunks, symbols, call graph) | `chunking.py`, `retrieval.py` |
-| Tools (`search_code`, `grep_symbol`, `read_function`, `get_callers/callees`, `run_failing_test`) | `tools.py` (index tools + sandboxed pytest) |
+| Tools (`search_code`, `grep_symbol`, `read_function`, `get_callers/callees`, `run_failing_test`) | `tools.py` (index tools + pytest in a temporary copy with a timeout) |
 | Agent loop (plan, act, update context, diagnose) | `adaptive.py` (plain Python loop; **not LangGraph yet**) |
 | Context manager (compression, sequencing, budget) | `compress.py`, `sequencing.py`, `budget.py` |
 | Baseline | `baseline.py` |
 | Eval runner | `bench/run.py` (generated cases). **Not yet:** runner over real cases + `fix_check` on real repos |
 
-Known gaps: the loop requests symbols/queries directly rather than calling `tools.py` through function calling; the pytest-based fix check
-exists only for generated cases (`bench/generate.py:verify_fix`).
+Known gaps: the loop requests symbols/queries directly rather than calling `tools.py` through function calling; the restricted fix check
+exists only for generated cases (`bench/generate.py:verify_fix`) and is not a general pytest-based real-repository verifier.
+
+## Milestone plan and contribution records
+
+Documented by ChatGPT on October 31, 2026, at Karthik's request.
+
+- [Milestone 2 plan](docs/MILESTONE2_PLAN.md): current implementation, remaining work, evaluation design, daily checkpoints, and report requirements.
+- [Contribution log](docs/CONTRIBUTION_LOG.md): actual changes and verification, with original authorship preserved.
+- [AI assistance disclosure](docs/AI_ASSISTANCE.md): attribution and submission-trace requirements.
+
+The action parser now requires complete, correctly typed diagnosis fields and valid nonempty symbol/query lists. A schema-valid diagnosis can still be incorrect or unsupported; it is not a grounding score.
+
+Remaining correctness work includes strict full-prompt budgeting, preserving requested evidence under compression, complete module chunks, and explicit termination/trace records. Requested symbols currently receive high priority but may still be compressed, and a single oversized final chunk can exceed the packer's budget. The milestone plan records acceptance checks for these gaps.
